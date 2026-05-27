@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+    ".git",
+    ".idea",
+    ".venv",
+    "__pycache__",
+    "notebooks"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "N"]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

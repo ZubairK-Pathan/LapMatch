@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laptop Recommender</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header>
+        <h1>Laptop<span class="highlight">Recomender</span></h1>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Find your perfect hardware.</h2>
+            <p>Tell us exactly what you need. Our algorithmic engine will find the mathematical optimal fit.</p>
+            
+            <div class="search-container">
+                <input type="text" id="prompt-input" placeholder="E.g., I'm a CS student trying to play Cyberpunk on the weekend, budget 90,000 INR..." autocomplete="off">
+                <button id="search-btn">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+            
+            <div class="dev-toggle-container">
+                <label>
+                    <input type="checkbox" id="dev-mode-cb">
+                    <span>Developer Mode </span>
+                </label>
+            </div>
+        </section>
+
+        <section id="results-container">
+            <!-- Dev Mode Raw Data -->
+            <div id="dev-data" class="hidden"></div>
+            <!-- Loader -->
+            <div id="loader" class="hidden">
+                <div class="spinner"></div>
+                <p>Computing Vector Distances & Synthesizing Rationale...</p>
+            </div>
+
+            <!-- Cards -->
+            <div id="cards-grid" class="hidden">
+                <!-- Injected via JS -->
+            </div>
+            
+        </section>
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
