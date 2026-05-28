@@ -22,7 +22,8 @@ class PromptRequest(BaseModel):
 
 class LaptopRequirements(BaseModel):
     budget: int = Field(
-        description="Maximum budget in INR (₹). Extract numeric value only. If no budget is explicitly mentioned, default strictly to 80000."
+        description="Maximum budget in INR (₹). Extract numeric value only. "
+        "If no budget is explicitly mentioned, default strictly to 80000."
     )
     
     q_perf: str = Field(
@@ -38,7 +39,8 @@ class LaptopRequirements(BaseModel):
         "'A' = Heavy, desk-bound laptop (user doesn't care about weight). "
         "'B' = Occasional travel. "
         "'C' = Ultra-light, Everyday Carry. "
-        "KEYWORD TRIGGER: If the user mentions 'portable', 'lightweight', 'travel', or 'carry', you MUST output 'C' here."
+        "KEYWORD TRIGGER: If the user mentions 'portable', 'lightweight', "
+        "'travel', or 'carry', you MUST output 'C' here."
     )
     
     q_batt: str = Field(
@@ -46,7 +48,8 @@ class LaptopRequirements(BaseModel):
         "'A' = Always plugged in / desk-bound. "
         "'B' = Moderate battery (4-5 hours). "
         "'C' = All-day battery. "
-        "KEYWORD TRIGGER: If the user mentions 'lasts all day', 'good battery', or 'long battery', you MUST output 'C' here."
+        "KEYWORD TRIGGER: If the user mentions 'lasts all day', 'good battery', "
+        "or 'long battery', you MUST output 'C' here."
     )
 
 system_extraction_prompt = """
