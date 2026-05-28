@@ -12,7 +12,7 @@ from models.recommender import run_lapmatch
 
 app = FastAPI()
 
-#123
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
