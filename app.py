@@ -21,21 +21,59 @@ class PromptRequest(BaseModel):
 
 
 class LaptopRequirements(BaseModel):
-    budget: int = Field(description="Maximum budget in INR (₹). Default is 80000.")
+    budget: int = Field(
+        description="Maximum budget in INR (₹). Extract numeric value only. If no budget is explicitly mentioned, default strictly to 80000."
+    )
+    
     q_perf: str = Field(
-        description="Extract 'A' for Basic, 'B' for Coding/Light Gaming/Moderate, 'C' for Heavy 3D/Hardcore Gaming."
+        description="Performance requirement. MUST output exactly 'A', 'B', or 'C'. "
+        "'A' = Basic tasks (web browsing, MS Word). "
+        "'B' = Moderate tasks (coding, light gaming, student work). "
+        "'C' = Heavy tasks (3D rendering, hardcore AAA gaming, 4K video editing). "
+        "NEGATIVE CONSTRAINT: Do NOT categorize words like 'portable', 'light', or 'battery' here."
     )
+    
     q_port: str = Field(
-        description="Extract 'A' for Desk-bound heavy laptop, 'B' for Occasional Travel, "
-        "'C' for Everyday Carry ultra-light."
+        description="Portability and weight requirement. MUST output exactly 'A', 'B', or 'C'. "
+        "'A' = Heavy, desk-bound laptop (user doesn't care about weight). "
+        "'B' = Occasional travel. "
+        "'C' = Ultra-light, Everyday Carry. "
+        "KEYWORD TRIGGER: If the user mentions 'portable', 'lightweight', 'travel', or 'carry', you MUST output 'C' here."
     )
-    q_batt: str = Field(description="Extract 'A' for plugged in, 'B' for 4-5 hours, 'C' for all-day battery.")
-
+    
+    q_batt: str = Field(
+        description="Battery life requirement. MUST output exactly 'A', 'B', or 'C'. "
+        "'A' = Always plugged in / desk-bound. "
+        "'B' = Moderate battery (4-5 hours). "
+        "'C' = All-day battery. "
+        "KEYWORD TRIGGER: If the user mentions 'lasts all day', 'good battery', or 'long battery', you MUST output 'C' here."
+    )
 
 system_extraction_prompt = """
-You are a brilliant intent-extraction AI. The user will state their laptop needs.
-Your job is to strictly extract variables from their text and route them into the JSON schema.
-Respond ONLY with raw JSON matching this schema. No markdown wrapping.
+You are a laptop requirements extraction AI.
+Extract values from the user's text and output ONLY a raw JSON object. No markdown.
+
+STRICT RULES — each field MUST be exactly one of the letters A, B, or C:
+
+- budget: integer in INR. Default 80000 if not stated.
+- q_perf:
+    A = basic (web browsing, MS Office, casual use)
+    B = moderate (coding, student work, light gaming)
+    C = heavy (3D rendering, AAA gaming, 4K editing)
+  Note: words like 'portable', 'light', 'battery', 'travel' do NOT affect q_perf.
+- q_port:
+    A = desk-bound, weight doesn't matter
+    B = occasional travel
+    C = daily carry / frequent travel / lightweight needed
+  Trigger C if user says: travel, carry, portable, lightweight, on the go.
+- q_batt:
+    A = always plugged in
+    B = 4-5 hours
+    C = all day battery / long battery life
+  Trigger C if user says: all day, last all day, good battery, long battery.
+
+Output format (example):
+{"budget": 80000, "q_perf": "B", "q_port": "C", "q_batt": "C"}
 """
 
 
@@ -121,11 +159,35 @@ async def recommend(request: PromptRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM Extraction failed: {str(e)}")
 
-    # 2. Run TOPSIS Math
+    # 2. Normalize LLM output to valid A/B/C values
+    def normalize_abc(value: str, default: str = "B") -> str:
+        """Map free-text LLM output back to a valid A/B/C grade."""
+        if not isinstance(value, str):
+            return default
+        v = value.strip().upper()
+        if v in ("A", "B", "C"):
+            return v
+        # Common hallucinated values -> best-fit mapping
+        perf_map = {"BASIC": "A", "GENERAL": "B", "MODERATE": "B", "HEAVY": "C", "HIGH": "C"}
+        port_map = {"DESKBOUND": "A", "DESK-BOUND": "A", "STATIONARY": "A",
+                    "OCCASIONAL": "B", "DURABLE": "B",
+                    "PORTABLE": "C", "ULTRALIGHT": "C", "EVERYDAY": "C", "DAILY": "C"}
+        batt_map = {"PLUGGEDIN": "A", "PLUGGED-IN": "A", "SHORT": "A",
+                    "MODERATE": "B", "MEDIUM": "B",
+                    "ALLDAY": "C", "ALL-DAY": "C", "LONG": "C", "LONGLASTING": "C", "LONG-LASTING": "C"}
+        combined = {**perf_map, **port_map, **batt_map}
+        return combined.get(v.replace(" ", ""), default)
+
+    # 3. Run TOPSIS Math
     budget = int(extracted_data.get("budget", 80000))
-    q_perf = extracted_data.get("q_perf", "B")
-    q_port = extracted_data.get("q_port", "B")
-    q_batt = extracted_data.get("q_batt", "B")
+    q_perf = normalize_abc(extracted_data.get("q_perf", "B"))
+    q_port = normalize_abc(extracted_data.get("q_port", "B"))
+    q_batt = normalize_abc(extracted_data.get("q_batt", "B"))
+
+    # Update extracted_data so the response reflects normalized values
+    extracted_data["q_perf"] = q_perf
+    extracted_data["q_port"] = q_port
+    extracted_data["q_batt"] = q_batt
 
     recommendations = run_lapmatch(budget, q_perf, q_port, q_batt, flex=0.3)
 
