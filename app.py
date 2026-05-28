@@ -52,6 +52,7 @@ class LaptopRequirements(BaseModel):
         "or 'long battery', you MUST output 'C' here."
     )
 
+
 system_extraction_prompt = """
 You are a laptop requirements extraction AI.
 Extract values from the user's text and output ONLY a raw JSON object. No markdown.
@@ -172,12 +173,29 @@ async def recommend(request: PromptRequest):
             return v
         # Common hallucinated values -> best-fit mapping
         perf_map = {"BASIC": "A", "GENERAL": "B", "MODERATE": "B", "HEAVY": "C", "HIGH": "C"}
-        port_map = {"DESKBOUND": "A", "DESK-BOUND": "A", "STATIONARY": "A",
-                    "OCCASIONAL": "B", "DURABLE": "B",
-                    "PORTABLE": "C", "ULTRALIGHT": "C", "EVERYDAY": "C", "DAILY": "C"}
-        batt_map = {"PLUGGEDIN": "A", "PLUGGED-IN": "A", "SHORT": "A",
-                    "MODERATE": "B", "MEDIUM": "B",
-                    "ALLDAY": "C", "ALL-DAY": "C", "LONG": "C", "LONGLASTING": "C", "LONG-LASTING": "C"}
+        port_map = {
+            "DESKBOUND": "A",
+            "DESK-BOUND": "A",
+            "STATIONARY": "A",
+            "OCCASIONAL": "B",
+            "DURABLE": "B",
+            "PORTABLE": "C",
+            "ULTRALIGHT": "C",
+            "EVERYDAY": "C",
+            "DAILY": "C",
+        }
+        batt_map = {
+            "PLUGGEDIN": "A",
+            "PLUGGED-IN": "A",
+            "SHORT": "A",
+            "MODERATE": "B",
+            "MEDIUM": "B",
+            "ALLDAY": "C",
+            "ALL-DAY": "C",
+            "LONG": "C",
+            "LONGLASTING": "C",
+            "LONG-LASTING": "C",
+        }
         combined = {**perf_map, **port_map, **batt_map}
         return combined.get(v.replace(" ", ""), default)
 
