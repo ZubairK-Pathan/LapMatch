@@ -25,7 +25,7 @@ class LaptopRequirements(BaseModel):
         description="Maximum budget in INR (₹). Extract numeric value only. "
         "If no budget is explicitly mentioned, default strictly to 80000."
     )
-    
+
     q_perf: str = Field(
         description="Performance requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Basic tasks (web browsing, MS Word). "
@@ -33,7 +33,7 @@ class LaptopRequirements(BaseModel):
         "'C' = Heavy tasks (3D rendering, hardcore AAA gaming, 4K video editing). "
         "NEGATIVE CONSTRAINT: Do NOT categorize words like 'portable', 'light', or 'battery' here."
     )
-    
+
     q_port: str = Field(
         description="Portability and weight requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Heavy, desk-bound laptop (user doesn't care about weight). "
@@ -42,7 +42,7 @@ class LaptopRequirements(BaseModel):
         "KEYWORD TRIGGER: If the user mentions 'portable', 'lightweight', "
         "'travel', or 'carry', you MUST output 'C' here."
     )
-    
+
     q_batt: str = Field(
         description="Battery life requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Always plugged in / desk-bound. "
