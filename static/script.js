@@ -89,7 +89,7 @@ function renderDevData(data) {
         });
         
         devBox.innerHTML = `
-            <h4>🔬 Edge AI Intent Extraction:</h4>
+            <h4> Edge AI Intent Extraction:</h4>
             <code>${JSON.stringify(data.calculations.extracted_intent, null, 2)}</code>
             <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin: 1rem 0;">
             <h4>🧮 Mathematical TOPSIS Vectors:</h4>
