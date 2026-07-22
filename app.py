@@ -1,17 +1,22 @@
 import json
+import os
 
 import ollama
 import uvicorn
+
 from ddgs import DDGS
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-
+from google import genai
+from google.genai import types
 from models.recommender import run_lapmatch
 
-app = FastAPI()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
+app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -19,13 +24,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 class PromptRequest(BaseModel):
     prompt: str
 
-
 class LaptopRequirements(BaseModel):
     budget: int = Field(
         description="Maximum budget in INR (₹). Extract numeric value only. "
         "If no budget is explicitly mentioned, default strictly to 80000."
     )
-
     q_perf: str = Field(
         description="Performance requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Basic tasks (web browsing, MS Word). "
@@ -33,7 +36,6 @@ class LaptopRequirements(BaseModel):
         "'C' = Heavy tasks (3D rendering, hardcore AAA gaming, 4K video editing). "
         "NEGATIVE CONSTRAINT: Do NOT categorize words like 'portable', 'light', or 'battery' here."
     )
-
     q_port: str = Field(
         description="Portability and weight requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Heavy, desk-bound laptop (user doesn't care about weight). "
@@ -42,7 +44,6 @@ class LaptopRequirements(BaseModel):
         "KEYWORD TRIGGER: If the user mentions 'portable', 'lightweight', "
         "'travel', or 'carry', you MUST output 'C' here."
     )
-
     q_batt: str = Field(
         description="Battery life requirement. MUST output exactly 'A', 'B', or 'C'. "
         "'A' = Always plugged in / desk-bound. "
@@ -101,6 +102,9 @@ def get_batch_engineer_reviews(user_prompt, laptops_data):
         "required": ["reviews"],
     }
 
+    content = ""
+
+    # ATTEMPT 1: Local Ollama
     try:
         response = ollama.chat(
             model="llama3:8b",
@@ -115,11 +119,41 @@ def get_batch_engineer_reviews(user_prompt, laptops_data):
             stream=False,
             format=schema,
         )
-        content = response["message"]["content"].replace("```json", "").replace("```", "").strip()
+        content = response["message"]["content"]
+
+    except Exception as e:
+        print(f"Local Ollama failed for reviews: {e}. Trying Gemini fallback...")
+        
+        # ATTEMPT 2: Gemini Cloud Fallback
+        if not gemini_client:
+            print("No GEMINI_API_KEY found. Falling back to default algorithm text.")
+            return ["Mathematical proximity map optimized."] * len(laptops_data)
+            
+        try:
+            full_prompt = (
+                "You are a Senior Hardware Engineer. Reply strictly in JSON format "
+                "with a single key 'reviews' containing an array of 1-sentence rationales.\n\n"
+                f"{review_prompt}"
+            )
+            response = gemini_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                ),
+            )
+            content = response.text
+        except Exception as gemini_e:
+            print(f"Gemini API failed: {gemini_e}")
+            return ["Mathematical proximity map optimized."] * len(laptops_data)
+
+    # Parse resulting JSON from either provider
+    try:
+        content = content.replace("```json", "").replace("```", "").strip()
         data = json.loads(content)
         return data.get("reviews", [])
-    except Exception as e:
-        print(f"Batch LLM error: {e}")
+    except Exception as parse_e:
+        print(f"JSON Parsing error: {parse_e}")
         return ["Mathematical proximity map optimized."] * len(laptops_data)
 
 
@@ -129,14 +163,11 @@ async def root():
 
 
 def get_laptop_image(name: str):
-    # used duck duck go here
     import time
-
-    # e.g. "Acer Swift Go 14 SFG14-41" -> "Acer Swift Go 14 laptop product"
     clean_name = " ".join(name.split()[:4]) + " laptop product"
 
     try:
-        time.sleep(0.5)  # Prevent DuckDuckGo API Rate limiting
+        time.sleep(0.5) 
         results = DDGS().images(clean_name, max_results=1)
         if results and len(results) > 0:
             return results[0]["image"]
@@ -147,7 +178,9 @@ def get_laptop_image(name: str):
 
 @app.post("/api/recommend")
 async def recommend(request: PromptRequest):
-    # 1. Extract Intent
+    raw_json = None
+    
+    # 1. Extract Intent - ATTEMPT 1: Local Ollama
     try:
         response = ollama.chat(
             model="llama3:8b",
@@ -158,43 +191,51 @@ async def recommend(request: PromptRequest):
             format=LaptopRequirements.model_json_schema(),
         )
         raw_json = response["message"]["content"]
+        
+    except Exception as e:
+        print(f"Local Ollama extraction failed: {e}. Trying Gemini fallback...")
+        
+        # 1. Extract Intent - ATTEMPT 2: Gemini Cloud Fallback
+        # 1. Extract Intent - ATTEMPT 2: Gemini Cloud Fallback
+        if not gemini_client:
+            raise HTTPException(status_code=503, detail="Local AI is offline and no GEMINI_API_KEY was found.")
+            
+        try:
+            full_prompt = f"{system_extraction_prompt}\n\nUser Request: {request.prompt}"
+            response = gemini_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                ),
+            )
+            raw_json = response.text
+        except Exception as gemini_e:
+            print(f"Gemini API failed: {gemini_e}")
+            raise HTTPException(status_code=500, detail="Both Local AI and Gemini Fallback failed.")
+
+    # Parse resulting JSON from either provider
+    try:
         cleaned_json = raw_json.replace("```json", "").replace("```", "").strip()
         extracted_data = json.loads(cleaned_json)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM Extraction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LLM JSON Parsing failed: {str(e)}\nRaw: {raw_json}")
 
     # 2. Normalize LLM output to valid A/B/C values
     def normalize_abc(value: str, default: str = "B") -> str:
-        """Map free-text LLM output back to a valid A/B/C grade."""
         if not isinstance(value, str):
             return default
         v = value.strip().upper()
         if v in ("A", "B", "C"):
             return v
-        # Common hallucinated values -> best-fit mapping
         perf_map = {"BASIC": "A", "GENERAL": "B", "MODERATE": "B", "HEAVY": "C", "HIGH": "C"}
         port_map = {
-            "DESKBOUND": "A",
-            "DESK-BOUND": "A",
-            "STATIONARY": "A",
-            "OCCASIONAL": "B",
-            "DURABLE": "B",
-            "PORTABLE": "C",
-            "ULTRALIGHT": "C",
-            "EVERYDAY": "C",
-            "DAILY": "C",
+            "DESKBOUND": "A", "DESK-BOUND": "A", "STATIONARY": "A", "OCCASIONAL": "B", 
+            "DURABLE": "B", "PORTABLE": "C", "ULTRALIGHT": "C", "EVERYDAY": "C", "DAILY": "C"
         }
         batt_map = {
-            "PLUGGEDIN": "A",
-            "PLUGGED-IN": "A",
-            "SHORT": "A",
-            "MODERATE": "B",
-            "MEDIUM": "B",
-            "ALLDAY": "C",
-            "ALL-DAY": "C",
-            "LONG": "C",
-            "LONGLASTING": "C",
-            "LONG-LASTING": "C",
+            "PLUGGEDIN": "A", "PLUGGED-IN": "A", "SHORT": "A", "MODERATE": "B", "MEDIUM": "B", 
+            "ALLDAY": "C", "ALL-DAY": "C", "LONG": "C", "LONGLASTING": "C", "LONG-LASTING": "C"
         }
         combined = {**perf_map, **port_map, **batt_map}
         return combined.get(v.replace(" ", ""), default)
@@ -205,7 +246,6 @@ async def recommend(request: PromptRequest):
     q_port = normalize_abc(extracted_data.get("q_port", "B"))
     q_batt = normalize_abc(extracted_data.get("q_batt", "B"))
 
-    # Update extracted_data so the response reflects normalized values
     extracted_data["q_perf"] = q_perf
     extracted_data["q_port"] = q_port
     extracted_data["q_batt"] = q_batt
@@ -215,7 +255,7 @@ async def recommend(request: PromptRequest):
     if recommendations.empty:
         return {"error": "No laptops found under that budget."}
 
-    # 3. Generate Engineer rationale in BATCH
+    # 4. Generate Engineer rationale in BATCH
     batch_input = []
     for i, row in recommendations.reset_index().iterrows():
         batch_input.append({"name": row["name"], "price": row["price"], "score": round(row["Match_Score"] * 100, 1)})
