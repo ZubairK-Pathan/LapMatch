@@ -15,8 +15,7 @@ def test_root_endpoint():
 
 @patch("app.ollama.chat")
 @patch("app.run_lapmatch")
-@patch("app.DDGS")
-def test_recommend_endpoint(mock_ddgs, mock_run_lapmatch, mock_ollama_chat):
+def test_recommend_endpoint(mock_run_lapmatch, mock_ollama_chat):
     # 1. Mock Ollama responses
     # Call 1 (extraction): Returns JSON of laptop requirements
     mock_response_1 = {"message": {"content": '{"budget": 70000, "q_perf": "B", "q_port": "B", "q_batt": "B"}'}}
@@ -41,10 +40,7 @@ def test_recommend_endpoint(mock_ddgs, mock_run_lapmatch, mock_ollama_chat):
     )
     mock_run_lapmatch.return_value = mock_results_df
 
-    # 3. Mock DuckDuckGo Image scraping API
-    mock_ddgs_instance = MagicMock()
-    mock_ddgs_instance.images.return_value = [{"image": "https://test-image.url/laptop.png"}]
-    mock_ddgs.return_value = mock_ddgs_instance
+    # 3. No DDGS mock needed anymore
 
     # Send post request to /api/recommend
     response = client.post("/api/recommend", json={"prompt": "I need a standard work laptop under 70000"})
@@ -57,6 +53,6 @@ def test_recommend_endpoint(mock_ddgs, mock_run_lapmatch, mock_ollama_chat):
     assert len(data["results"]) == 2
     assert data["results"][0]["name"] == "Laptop Premium X"
     assert data["results"][0]["pitch"] == "Excellent balanced notebook."
-    assert data["results"][0]["image_url"] == "https://test-image.url/laptop.png"
+    assert data["results"][0]["image_url"] == "https://placehold.co/400x250?text=No+Image"
     assert "calculations" in data
     assert data["calculations"]["extracted_intent"]["budget"] == 70000

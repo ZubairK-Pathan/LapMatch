@@ -227,6 +227,24 @@ button:hover {
     padding-top: 1.5rem;
 }
 
+.laptop-specs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.spec-badge {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+}
+
 @keyframes slideUp {
     to {
         opacity: 1;
@@ -236,6 +254,10 @@ button:hover {
 
 .dev-toggle-container {
     margin-top: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1.5rem;
 }
 
 .dev-toggle-container label {
@@ -271,4 +293,74 @@ button:hover {
     text-transform: uppercase;
     font-size: 0.8rem;
     letter-spacing: 1px;
+}
+
+.insights-btn {
+    border-radius: 20px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-left: 1rem;
+    width: auto;
+    height: auto;
+}
+
+.insights-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: none;
+}
+
+#market-insights-container {
+    width: 100%;
+    max-width: 800px;
+    margin: 2rem auto;
+    background: var(--glass-bg);
+    padding: 2rem;
+    border-radius: 16px;
+    border: 1px solid var(--glass-border);
+}
+
+#topsis-controls {
+    max-width: 800px;
+    margin: 0 auto 2rem;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.5rem;
+}
+
+#topsis-controls h3 {
+    margin-top: 0;
+    text-align: center;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.sliders-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.slider-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.slider-group label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.slider-val {
+    margin-top: 0.5rem;
+    font-weight: 800;
+    color: var(--accent);
 }

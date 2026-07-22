@@ -3,8 +3,9 @@ import os
 
 import ollama
 import uvicorn
+import pandas as pd
 
-from ddgs import DDGS
+import functools
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +54,12 @@ class LaptopRequirements(BaseModel):
         "or 'long battery', you MUST output 'C' here."
     )
 
+class RecalculateRequest(BaseModel):
+    budget: float
+    q_perf: str
+    q_port: str
+    q_batt: str
+
 
 system_extraction_prompt = """
 You are a laptop requirements extraction AI.
@@ -91,7 +98,8 @@ def get_batch_engineer_reviews(user_prompt, laptops_data):
     )
     review_prompt = (
         f"User Request: '{user_prompt}'. Matches:\n{lap_info}\n"
-        "Provide a brutally technical, 1-sentence rationale for EACH option. Return ONLY a JSON schema."
+        "Provide a brutally technical, 1-sentence rationale for EACH option. Return ONLY a JSON schema. "
+        "DO NOT start the sentence with 'Option 1:', the laptop's name, or any prefixes. Go straight into the description and why it fits the user."
     )
 
     schema = {
@@ -162,46 +170,27 @@ async def root():
     return FileResponse("static/index.html")
 
 
-def get_laptop_image(name: str):
-    import time
-    clean_name = " ".join(name.split()[:4]) + " laptop product"
-
-    try:
-        time.sleep(0.5) 
-        results = DDGS().images(clean_name, max_results=1)
-        if results and len(results) > 0:
-            return results[0]["image"]
-    except Exception as e:
-        print(f"Image Scrape failed for {name}: {e}")
-    return "https://placehold.co/400x250/111827/3b82f6?text=No+Image+Found"
-
-
-@app.post("/api/recommend")
-async def recommend(request: PromptRequest):
+@functools.lru_cache(maxsize=128)
+def extract_intent(prompt: str) -> dict:
     raw_json = None
-    
     # 1. Extract Intent - ATTEMPT 1: Local Ollama
     try:
         response = ollama.chat(
             model="llama3:8b",
             messages=[
                 {"role": "system", "content": system_extraction_prompt},
-                {"role": "user", "content": request.prompt},
+                {"role": "user", "content": prompt},
             ],
             format=LaptopRequirements.model_json_schema(),
         )
         raw_json = response["message"]["content"]
-        
     except Exception as e:
         print(f"Local Ollama extraction failed: {e}. Trying Gemini fallback...")
-        
-        # 1. Extract Intent - ATTEMPT 2: Gemini Cloud Fallback
-        # 1. Extract Intent - ATTEMPT 2: Gemini Cloud Fallback
         if not gemini_client:
             raise HTTPException(status_code=503, detail="Local AI is offline and no GEMINI_API_KEY was found.")
             
         try:
-            full_prompt = f"{system_extraction_prompt}\n\nUser Request: {request.prompt}"
+            full_prompt = f"{system_extraction_prompt}\n\nUser Request: {prompt}"
             response = gemini_client.models.generate_content(
                 model='gemini-1.5-flash',
                 contents=full_prompt,
@@ -214,12 +203,17 @@ async def recommend(request: PromptRequest):
             print(f"Gemini API failed: {gemini_e}")
             raise HTTPException(status_code=500, detail="Both Local AI and Gemini Fallback failed.")
 
-    # Parse resulting JSON from either provider
     try:
         cleaned_json = raw_json.replace("```json", "").replace("```", "").strip()
         extracted_data = json.loads(cleaned_json)
+        return extracted_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM JSON Parsing failed: {str(e)}\nRaw: {raw_json}")
+
+
+@app.post("/api/recommend")
+async def recommend(request: PromptRequest):
+    extracted_data = extract_intent(request.prompt)
 
     # 2. Normalize LLM output to valid A/B/C values
     def normalize_abc(value: str, default: str = "B") -> str:
@@ -282,6 +276,12 @@ async def recommend(request: PromptRequest):
                 rationale = str(raw_rat)
         else:
             rationale = "Algorithm determined optimal vector proximity."
+            
+        import re
+        # Remove any prefixes like "Option 1: Infinix Zero Book -" or just the laptop name
+        rationale = re.sub(r'^(Option \d+:.*?-\s*|.*?- \s*)', '', rationale).strip()
+        # Fallback if it still starts with "Option X:"
+        rationale = re.sub(r'^Option \d+:\s*', '', rationale).strip()
 
         results.append(
             {
@@ -291,11 +291,67 @@ async def recommend(request: PromptRequest):
                 "weight": row["Weight_Proxy"],
                 "battery": row["Battery_Proxy"],
                 "pitch": rationale,
-                "image_url": get_laptop_image(row["name"]),
+                "image_url": row["img"] if pd.notna(row.get("img")) else "https://placehold.co/400x250?text=No+Image",
+                "specs": {
+                    "processor": row.get("processor", "Unknown"),
+                    "ram": row.get("ram", "Unknown"),
+                    "storage": row.get("storage", "Unknown"),
+                    "graphics_card": row.get("graphics_card", "Unknown")
+                }
             }
         )
 
     return {"results": results, "calculations": {"extracted_intent": extracted_data}}
+
+
+@app.get("/api/stats")
+async def get_stats():
+    from pathlib import Path
+    file_path = Path(__file__).resolve().parent / "data" / "lapmatch_clean_data.csv"
+    if not file_path.exists():
+        return {"error": "Data file not found."}
+    
+    df = pd.read_csv(file_path)
+    
+    # Simple market insights logic (e.g. brand counts)
+    df["brand"] = df["name"].apply(lambda x: str(x).split()[0] if pd.notna(x) else "Unknown")
+    brand_counts = df["brand"].value_counts().head(10).to_dict()
+    
+    return {
+        "market_insights": {
+            "top_brands": brand_counts,
+            "total_laptops": len(df),
+            "avg_price": float(df["price"].mean())
+        }
+    }
+
+
+@app.post("/api/recalculate")
+async def recalculate(req: RecalculateRequest):
+    recommendations = run_lapmatch(req.budget, req.q_perf, req.q_port, req.q_batt, flex=0.3)
+    
+    if recommendations.empty:
+        return {"error": "No laptops found under that budget."}
+        
+    results = []
+    for _, row in recommendations.reset_index().iterrows():
+        results.append({
+            "name": row["name"],
+            "price": row["price"],
+            "match_score": row["Match_Score"],
+            "weight": row["Weight_Proxy"],
+            "battery": row["Battery_Proxy"],
+            "pitch": "Recalculated instantly based on custom mathematical weights.",
+            "image_url": row["img"] if pd.notna(row.get("img")) else "https://placehold.co/400x250?text=No+Image",
+            "specs": {
+                "processor": row.get("processor", "Unknown"),
+                "ram": row.get("ram", "Unknown"),
+                "storage": row.get("storage", "Unknown"),
+                "graphics_card": row.get("graphics_card", "Unknown")
+            }
+        })
+        
+    return {"results": results, "calculations": {"extracted_intent": req.dict()}}
 
 
 if __name__ == "__main__":
