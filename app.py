@@ -144,7 +144,7 @@ def get_batch_engineer_reviews(user_prompt, laptops_data):
                 f"{review_prompt}"
             )
             response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -192,7 +192,7 @@ def extract_intent(prompt: str) -> dict:
         try:
             full_prompt = f"{system_extraction_prompt}\n\nUser Request: {prompt}"
             response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
