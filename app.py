@@ -1,7 +1,7 @@
 import json
 import os
-
-import ollama
+import re
+import time
 import uvicorn
 import pandas as pd
 
@@ -14,8 +14,59 @@ from google import genai
 from google.genai import types
 from models.recommender import run_lapmatch
 
+from groq import Groq
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+def generate_gemini_json(prompt: str) -> str:
+    max_retries = 5
+    if gemini_client:
+        for attempt in range(max_retries):
+            try:
+                response = gemini_client.models.generate_content(
+                    model='gemini-3.5-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                    ),
+                )
+                return response.text
+            except Exception as retry_e:
+                err_str = str(retry_e)
+                if "Quota exceeded" in err_str:
+                    print(f"Gemini Quota exceeded, failing fast...")
+                    break
+                elif ("503" in err_str or "429" in err_str) and attempt < max_retries - 1:
+                    sleep_time = 2 ** attempt
+                    print(f"API busy, retrying in {sleep_time} seconds (Attempt {attempt+1}/{max_retries})...")
+                    time.sleep(sleep_time)
+                else:
+                    print(f"Gemini failed entirely: {err_str}")
+                    break
+    
+    if groq_client:
+        print("Falling back to Groq...")
+        try:
+            chat_completion = groq_client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model="openai/gpt-oss-20b",
+                response_format={"type": "json_object"},
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as groq_e:
+            print(f"Groq API failed: {groq_e}")
+            raise groq_e
+
+    raise Exception("Both Gemini and Groq APIs failed or are not configured.")
 
 app = FastAPI()
 
@@ -112,57 +163,20 @@ def get_batch_engineer_reviews(user_prompt, laptops_data):
 
     content = ""
 
-    # ATTEMPT 1: Local Ollama
-    try:
-        response = ollama.chat(
-            model="llama3:8b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a Senior Hardware Engineer. "
-                    "Reply strictly with the requested JSON schema array of rationales.",
-                },
-                {"role": "user", "content": review_prompt},
-            ],
-            stream=False,
-            format=schema,
-        )
-        content = response["message"]["content"]
-
-    except Exception as e:
-        print(f"Local Ollama failed for reviews: {e}. Trying Gemini fallback...")
+    if not gemini_client and not groq_client:
+        print("No GEMINI_API_KEY or GROQ_API_KEY found. Falling back to default algorithm text.")
+        return ["Mathematical proximity map optimized."] * len(laptops_data)
         
-        # ATTEMPT 2: Gemini Cloud Fallback
-        if not gemini_client:
-            print("No GEMINI_API_KEY found. Falling back to default algorithm text.")
-            return ["Mathematical proximity map optimized."] * len(laptops_data)
-            
-        try:
-            full_prompt = (
-                "You are a Senior Hardware Engineer. Reply strictly in JSON format "
-                "with a single key 'reviews' containing an array of 1-sentence rationales.\n\n"
-                f"{review_prompt}"
-            )
-            for attempt in range(3):
-                try:
-                    response = gemini_client.models.generate_content(
-                        model='gemini-3.5-flash',
-                        contents=full_prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                        ),
-                    )
-                    break
-                except Exception as retry_e:
-                    if "503" in str(retry_e) and attempt < 2:
-                        import time
-                        time.sleep(2)
-                    else:
-                        raise retry_e
-            content = response.text
-        except Exception as gemini_e:
-            print(f"Gemini API failed: {gemini_e}")
-            return ["Mathematical proximity map optimized."] * len(laptops_data)
+    try:
+        full_prompt = (
+            "You are a Senior Hardware Engineer. Reply strictly in JSON format "
+            "with a single key 'reviews' containing an array of 1-sentence rationales.\n\n"
+            f"{review_prompt}"
+        )
+        content = generate_gemini_json(full_prompt)
+    except Exception as gemini_e:
+        print(f"Gemini API failed: {gemini_e}")
+        return ["Mathematical proximity map optimized."] * len(laptops_data)
 
     # Parse resulting JSON from either provider
     try:
@@ -182,45 +196,16 @@ async def root():
 @functools.lru_cache(maxsize=128)
 def extract_intent(prompt: str) -> dict:
     raw_json = None
-    # 1. Extract Intent - ATTEMPT 1: Local Ollama
+    if not gemini_client and not groq_client:
+        print("No GEMINI_API_KEY or GROQ_API_KEY was found. Using fallback.")
+        return {"budget": 80000, "q_perf": "B", "q_port": "B", "q_batt": "B", "api_fallback": True}
+        
     try:
-        response = ollama.chat(
-            model="llama3:8b",
-            messages=[
-                {"role": "system", "content": system_extraction_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            format=LaptopRequirements.model_json_schema(),
-        )
-        raw_json = response["message"]["content"]
-    except Exception as e:
-        print(f"Local Ollama extraction failed: {e}. Trying Gemini fallback...")
-        if not gemini_client:
-            print("Local AI is offline and no GEMINI_API_KEY was found. Using fallback.")
-            return {"budget": 80000, "q_perf": "B", "q_port": "B", "q_batt": "B", "api_fallback": True}
-            
-        try:
-            full_prompt = f"{system_extraction_prompt}\n\nUser Request: {prompt}"
-            for attempt in range(3):
-                try:
-                    response = gemini_client.models.generate_content(
-                        model='gemini-3.5-flash',
-                        contents=full_prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                        ),
-                    )
-                    break
-                except Exception as retry_e:
-                    if "503" in str(retry_e) and attempt < 2:
-                        import time
-                        time.sleep(2)
-                    else:
-                        raise retry_e
-            raw_json = response.text
-        except Exception as gemini_e:
-            print(f"Gemini API failed: {gemini_e}")
-            return {"budget": 80000, "q_perf": "B", "q_port": "B", "q_batt": "B", "api_fallback": True}
+        full_prompt = f"{system_extraction_prompt}\n\nUser Request: {prompt}"
+        raw_json = generate_gemini_json(full_prompt)
+    except Exception as gemini_e:
+        print(f"Gemini API failed: {gemini_e}")
+        return {"budget": 80000, "q_perf": "B", "q_port": "B", "q_batt": "B", "api_fallback": True}
 
     try:
         cleaned_json = raw_json.replace("```json", "").replace("```", "").strip()
@@ -297,7 +282,6 @@ async def recommend(request: PromptRequest):
         else:
             rationale = "Algorithm determined optimal vector proximity."
             
-        import re
         # Remove any prefixes like "Option 1: Infinix Zero Book -" or just the laptop name
         rationale = re.sub(r'^(Option \d+:.*?-\s*|.*?- \s*)', '', rationale).strip()
         # Fallback if it still starts with "Option X:"
@@ -328,12 +312,8 @@ async def recommend(request: PromptRequest):
 
 @app.get("/api/stats")
 async def get_stats():
-    from pathlib import Path
-    file_path = Path(__file__).resolve().parent / "data" / "lapmatch_clean_data.csv"
-    if not file_path.exists():
-        return {"error": "Data file not found."}
-    
-    df = pd.read_csv(file_path)
+    from models.recommender import LAPTOPS_DF
+    df = LAPTOPS_DF.copy()
     
     # Simple market insights logic (e.g. brand counts)
     df["brand"] = df["name"].apply(lambda x: str(x).split()[0] if pd.notna(x) else "Unknown")
