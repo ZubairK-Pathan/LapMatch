@@ -1,46 +1,18 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # This is a sample Jupyter Notebook
-# 
-# Below is an example of a code cell. 
-# Put your cursor into the cell and press Shift+Enter to execute it and select the next one, or click 'Run Cell' button.
-# 
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-# 
-# To learn more about Jupyter Notebooks in PyCharm, see [help](https://www.jetbrains.com/help/pycharm/ipython-notebook-support.html).
-# For an overview of PyCharm, go to Help -> Learn IDE features or refer to [our documentation](https://www.jetbrains.com/help/pycharm/getting-started.html).
-
-# In[77]:
-
-
 import pandas as pd
 import numpy as np
 
 
-# In[78]:
 
 
 df = pd.read_csv("data/smartprix_laptop.csv", encoding="latin1")
 print(f"Original shape: {df.shape}")
 
-
-# In[79]:
-
-
 # Drop columns we don't need for the MVP
 columns_to_drop = ['os', 'warranty', 'disk_type', 'has_touchScreen', 'screen_pixels', 'screen_size']
 df_clean = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
 
-
-# In[80]:
-
-
-# 1. Ensure Price is a clean number
+# Ensure Price is a clean number
 df_clean['price'] = pd.to_numeric(df_clean['price'], errors='coerce')
-
-
-# In[81]:
 
 
 df_clean['ram_gb'] = df_clean['ram'].str.extract('(\d+)').astype(float)

@@ -4,11 +4,11 @@ import pandas as pd
 
 from models.topsis import apply_topsis, calculate_weights
 
+DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "lapmatch_clean_data.csv"
+LAPTOPS_DF = pd.read_csv(DATA_PATH)
 
 def run_lapmatch(budget: float, q_perf: str, q_port: str, q_batt: str, flex: float = 0.3) -> pd.DataFrame:
-
-    file_path = Path(__file__).resolve().parent.parent / "data" / "lapmatch_clean_data.csv"
-    df = pd.read_csv(file_path)
+    df = LAPTOPS_DF.copy()
 
     lower_bound = budget * (1 - flex)
 

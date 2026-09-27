@@ -13,17 +13,17 @@ def test_root_endpoint():
     assert response.status_code == 200
 
 
-@patch("app.ollama.chat")
+@patch("app.gemini_client")
 @patch("app.run_lapmatch")
-def test_recommend_endpoint(mock_run_lapmatch, mock_ollama_chat):
-    # 1. Mock Ollama responses
-    # Call 1 (extraction): Returns JSON of laptop requirements
-    mock_response_1 = {"message": {"content": '{"budget": 70000, "q_perf": "B", "q_port": "B", "q_batt": "B"}'}}
-    # Call 2 (rationales): Returns JSON list of reviews
-    mock_response_2 = {
-        "message": {"content": '{"reviews": ["Excellent balanced notebook.", "Solid budget keyboard."]}'}
-    }
-    mock_ollama_chat.side_effect = [mock_response_1, mock_response_2]
+def test_recommend_endpoint(mock_run_lapmatch, mock_gemini_client):
+    # 1. Mock Gemini responses
+    mock_response_1 = MagicMock()
+    mock_response_1.text = '{"budget": 70000, "q_perf": "B", "q_port": "B", "q_batt": "B"}'
+    
+    mock_response_2 = MagicMock()
+    mock_response_2.text = '{"reviews": ["Excellent balanced notebook.", "Solid budget keyboard."]}'
+    
+    mock_gemini_client.models.generate_content.side_effect = [mock_response_1, mock_response_2]
 
     # 2. Mock run_lapmatch TOPSIS output
     mock_results_df = pd.DataFrame(

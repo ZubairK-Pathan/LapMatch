@@ -260,6 +260,6 @@ MIT License — feel free to fork, modify, and use this project.
 
 <div align="center">
 
-Built by [Zubair Khan](https://zubairkhan.app) · [Portfolio](https://zubairkhan.app) · [LapMatch Live](https://lapmatch.zubairkhan.app)
+Built by [Zubairkhan Pathan](https://zubairkhan.app) · [Portfolio](https://zubairkhan.app) · [LapMatch Live](https://lapmatch.zubairkhan.app)
 
 </div>
